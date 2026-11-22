@@ -1,506 +1,314 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="dark">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gravador de Vídeo & Áudio</title>
-    <!-- Tailwind CSS -->
+    <title>Gravador de Vídeo</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Fonte Inter -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        mono: ['JetBrains Mono', 'monospace'],
-                    },
-                    animation: {
-                        'pulse-fast': 'pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-                    }
-                }
-            }
-        }
-    </script>
-
-    <!-- Corrige duração e busca em arquivos WebM -->
-<script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.min.js"></script>
-<!-- Remuxa átomos moov/mdat em arquivos MP4 nativos -->
-<script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
-    
+    <!-- 1. BIBLIOTECAS DE CORREÇÃO DE METADADOS (Ficam aqui dentro do <head>) -->
+    <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-center items-center p-4 sm:p-6 selection:bg-rose-500/30">
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
 
-    <!-- Container Principal Compacto e Responsivo -->
-    <main class="w-full max-w-lg bg-slate-900/90 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-md">
-        
-        <!-- Cabeçalho Discreto -->
-        <header class="px-5 py-4 border-b border-slate-800/80 flex items-center justify-between">
-            <div class="flex items-center gap-2.5">
-                <div class="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-500">
-                    <!-- Ícone Câmera -->
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                </div>
-                <h1 class="font-semibold text-base sm:text-lg tracking-tight text-slate-100">Estúdio de Gravação</h1>
-            </div>
-
-            <!-- Indicador de Status -->
-            <div id="statusBadge" class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700/70 transition-colors">
-                <span id="statusDot" class="w-2 h-2 rounded-full bg-slate-400"></span>
-                <span id="statusText">Aguardando câmera...</span>
-            </div>
+    <main class="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 p-5 flex flex-col items-center gap-5">
+        <header class="w-full flex items-center justify-between border-b border-slate-700 pb-3">
+            <h1 class="text-lg font-semibold tracking-tight text-white">Gravador de Câmera</h1>
+            <span id="statusBadge" class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-700 text-slate-300">
+                Aguardando câmera
+            </span>
         </header>
 
-        <!-- Área da Webcam (Tela Pequena Centralizada) -->
-        <section class="p-5 pb-3 flex flex-col items-center">
-            <div class="relative w-full max-w-sm aspect-video bg-slate-950 rounded-2xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center group">
-                
-                <!-- Elemento de Vídeo ao Vivo (Espelhado apenas visualmente e mutado para evitar eco) -->
-                <video id="webcamPreview" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100 hidden"></video>
-
-                <!-- Placeholder / Tela de Carregamento ou Erro de Permissão -->
-                <div id="cameraPlaceholder" class="flex flex-col items-center justify-center text-center p-5 max-w-xs">
-                    <div id="placeholderIcon" class="w-12 h-12 rounded-2xl bg-slate-800/80 flex items-center justify-center text-slate-400 mb-3">
-                        <svg class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <p id="placeholderTitle" class="text-sm font-medium text-slate-200">Solicitando permissão...</p>
-                    <p id="placeholderDesc" class="text-xs text-slate-400 mt-1 leading-relaxed">Autorize o acesso à câmera e ao microfone no seu navegador.</p>
-                    <button id="btnRetryPermission" type="button" class="hidden mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-medium rounded-xl transition-all shadow-lg shadow-indigo-600/20">
-                        Tentar Novamente
-                    </button>
-                </div>
-
-                <!-- Overlay de Rec na Câmera -->
-                <div id="recOverlay" class="hidden absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 flex items-center gap-1.5">
-                    <span id="recOverlayDot" class="w-2 h-2 rounded-full bg-rose-500 animate-pulse-fast"></span>
-                    <span id="recOverlayLabel" class="text-[11px] font-bold tracking-wider uppercase text-white">REC</span>
-                </div>
-
-                <!-- Indicador de Microfone Ativo -->
-                <div id="micBadge" class="hidden absolute bottom-3 right-3 bg-black/60 backdrop-blur-md p-1.5 rounded-lg border border-white/10 text-emerald-400" title="Microfone ativo">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                </div>
+        <!-- Tela pequena da webcam -->
+        <div class="relative w-full aspect-video max-h-56 bg-black rounded-xl overflow-hidden border border-slate-700 shadow-inner flex items-center justify-center">
+            <video id="preview" autoplay muted playsinline class="w-full h-full object-cover transform -scale-x-100"></video>
+            
+            <!-- Indicador de gravação -->
+            <div id="recIndicator" class="hidden absolute top-3 left-3 flex items-center gap-2 bg-black/70 backdrop-blur-sm px-2.5 py-1 rounded-full">
+                <span id="recDot" class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
+                <span id="recLabel" class="text-xs font-bold tracking-wider uppercase text-white">REC</span>
             </div>
-        </section>
 
-        <!-- Barra de Progresso (Exibida apenas no modo 15 minutos) -->
-        <div id="progressContainer" class="hidden px-6 pt-1">
-            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                <div id="progressBar" class="h-full bg-indigo-500 transition-all duration-300 rounded-full" style="width: 0%"></div>
+            <!-- Mensagem de erro/permissão -->
+            <div id="permissionOverlay" class="hidden absolute inset-0 bg-slate-900/95 p-4 flex flex-col items-center justify-center text-center gap-3">
+                <p id="errorText" class="text-sm text-slate-300">Permita o acesso à câmera e ao microfone para continuar.</p>
+                <button id="btnRetry" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition">
+                    Solicitar Permissão
+                </button>
             </div>
         </div>
 
-        <!-- Controles de Gravação -->
-        <section class="p-5 pt-3">
-            <div class="grid grid-cols-2 gap-3">
-                
-                <!-- 1. Botão Gravar Livre -->
-                <button id="btnRecordFree" type="button" disabled
-                    class="flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl font-semibold text-sm bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800/60 disabled:text-slate-500 disabled:cursor-not-allowed text-white shadow-lg shadow-rose-600/20 disabled:shadow-none transition-all active:scale-[0.98]">
-                    <span class="w-2.5 h-2.5 rounded-full bg-current"></span>
-                    <span>Gravar Livre</span>
-                </button>
-
-                <!-- 2. Botão Gravar 15 min -->
-                <button id="btnRecord15" type="button" disabled
-                    class="flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl font-semibold text-sm bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800/60 disabled:text-slate-500 disabled:cursor-not-allowed text-white shadow-lg shadow-indigo-600/20 disabled:shadow-none transition-all active:scale-[0.98]">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Gravar 15 min</span>
-                </button>
-
-                <!-- 3. Botão Pausar / Retomar -->
-                <button id="btnPauseResume" type="button" disabled
-                    class="flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl font-semibold text-sm bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800/60 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 shadow-lg shadow-amber-500/15 disabled:shadow-none transition-all active:scale-[0.98]">
-                    <svg id="iconPause" class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                    </svg>
-                    <svg id="iconPlay" class="w-4 h-4 shrink-0 hidden" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                    </svg>
-                    <span id="textPauseResume">Pausar</span>
-                </button>
-
-                <!-- 4. Botão Parar -->
-                <button id="btnStop" type="button" disabled
-                    class="flex items-center justify-center gap-2 py-3.5 px-4 rounded-2xl font-semibold text-sm bg-slate-200 hover:bg-white disabled:bg-slate-800/60 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 shadow-lg shadow-white/5 disabled:shadow-none transition-all active:scale-[0.98]">
-                    <span class="w-3 h-3 rounded-sm bg-current"></span>
-                    <span>Parar</span>
-                </button>
-
+        <!-- Barra de progresso (visível apenas no modo 15 min) -->
+        <div id="progressContainer" class="hidden w-full">
+            <div class="flex justify-between text-xs text-slate-400 mb-1">
+                <span>Modo 15 minutos</span>
+                <span id="remainingText">Restante: 15:00</span>
             </div>
-        </section>
-
-        <!-- Cronômetro Digital na Base -->
-        <footer class="px-5 pb-6 pt-1 flex flex-col items-center">
-            <div class="w-full bg-slate-950/90 border border-slate-800/90 rounded-2xl py-4 px-5 flex flex-col items-center justify-center">
-                <span class="text-[11px] uppercase tracking-widest text-slate-400 font-semibold mb-1" id="timerSubtitle">
-                    Tempo de Gravação
-                </span>
-                
-                <div class="flex items-baseline gap-2">
-                    <span id="timerDisplay" class="font-mono text-4xl sm:text-5xl font-bold tracking-tight text-slate-100">
-                        00:00
-                    </span>
-                    <span id="timerLimitDisplay" class="hidden font-mono text-lg sm:text-xl font-medium text-indigo-400">
-                        / 15:00
-                    </span>
-                </div>
-
-                <!-- Contagem Regressiva Discreta (Modo 15 min) -->
-                <span id="countdownText" class="hidden text-xs text-slate-400 mt-1.5 font-medium">
-                    Restante: <strong id="remainingDisplay" class="text-slate-200 font-mono">15:00</strong>
-                </span>
+            <div class="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div id="progressBar" class="h-full bg-indigo-500 transition-all duration-300" style="width: 0%"></div>
             </div>
+        </div>
 
-            <!-- Notificação de Download / Salvamento Manual -->
-            <div id="downloadBanner" class="hidden w-full mt-4 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div class="flex items-center gap-2.5 text-center sm:text-left">
-                    <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                    </div>
-                    <div>
-                        <p class="text-xs font-semibold text-emerald-300">Gravação concluída e salva!</p>
-                        <p id="savedFileName" class="text-[11px] text-emerald-400/80 truncate max-w-[200px] sm:max-w-[230px]">video.webm</p>
-                    </div>
-                </div>
-                <a id="manualDownloadLink" href="#" download="gravacao.webm"
-                    class="w-full sm:w-auto text-center px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors shrink-0">
-                    Baixar Novamente
-                </a>
+        <!-- Botões de controle -->
+        <div class="grid grid-cols-2 gap-3 w-full">
+            <button id="btnRecordFree" disabled
+                class="col-span-1 py-3 px-4 rounded-xl font-semibold text-sm bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow transition flex items-center justify-center gap-2">
+                <span>●</span> Gravar Livre
+            </button>
+
+            <button id="btnRecord15" disabled
+                class="col-span-1 py-3 px-4 rounded-xl font-semibold text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow transition flex items-center justify-center gap-2">
+                <span>⏱</span> Gravar 15 min
+            </button>
+
+            <button id="btnPause" disabled
+                class="col-span-1 py-3 px-4 rounded-xl font-semibold text-sm bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow transition">
+                Pausar
+            </button>
+
+            <button id="btnStop" disabled
+                class="col-span-1 py-3 px-4 rounded-xl font-semibold text-sm bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow transition">
+                Parar e Salvar
+            </button>
+        </div>
+
+        <!-- Cronômetro -->
+        <div class="w-full bg-slate-900/80 border border-slate-700/80 rounded-xl py-3 px-4 flex flex-col items-center">
+            <span class="text-[11px] uppercase tracking-widest text-slate-400 mb-0.5">Tempo de Gravação</span>
+            <div id="timerDisplay" class="font-mono text-3xl sm:text-4xl font-bold tracking-wider text-white">
+                00:00:00
             </div>
-        </footer>
+        </div>
 
+        <!-- Link manual de backup caso o download automático seja bloqueado -->
+        <div id="downloadContainer" class="hidden w-full text-center">
+            <a id="manualDownloadLink" href="#" class="inline-block w-full py-2.5 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium text-emerald-400 transition">
+                ⬇ Baixar gravação novamente
+            </a>
+        </div>
     </main>
 
-    <!-- Lógica Completa da Aplicação -->
+    <!-- 2. TODO O JAVASCRIPT FICA AQUI NO FINAL, ANTES DE FECHAR O </body> -->
     <script>
-        /**
-         * Constantes de Configuração
-         */
-        const FIFTEEN_MINUTES_MS = 15 * 60 * 1000; // 900.000 ms (exatos 15 minutos)
+        const LIMITE_15_MIN_MS = 15 * 60 * 1000; // 900.000 ms
 
-        /**
-         * Referências aos Elementos do DOM
-         */
-        const webcamPreview = document.getElementById('webcamPreview');
-        const cameraPlaceholder = document.getElementById('cameraPlaceholder');
-        const placeholderTitle = document.getElementById('placeholderTitle');
-        const placeholderDesc = document.getElementById('placeholderDesc');
-        const placeholderIcon = document.getElementById('placeholderIcon');
-        const btnRetryPermission = document.getElementById('btnRetryPermission');
-
+        const preview = document.getElementById('preview');
         const statusBadge = document.getElementById('statusBadge');
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
-        const recOverlay = document.getElementById('recOverlay');
-        const recOverlayDot = document.getElementById('recOverlayDot');
-        const recOverlayLabel = document.getElementById('recOverlayLabel');
-        const micBadge = document.getElementById('micBadge');
+        const recIndicator = document.getElementById('recIndicator');
+        const recDot = document.getElementById('recDot');
+        const recLabel = document.getElementById('recLabel');
+        const permissionOverlay = document.getElementById('permissionOverlay');
+        const errorText = document.getElementById('errorText');
+        const btnRetry = document.getElementById('btnRetry');
 
         const btnRecordFree = document.getElementById('btnRecordFree');
         const btnRecord15 = document.getElementById('btnRecord15');
-        const btnPauseResume = document.getElementById('btnPauseResume');
+        const btnPause = document.getElementById('btnPause');
         const btnStop = document.getElementById('btnStop');
-        const iconPause = document.getElementById('iconPause');
-        const iconPlay = document.getElementById('iconPlay');
-        const textPauseResume = document.getElementById('textPauseResume');
 
         const timerDisplay = document.getElementById('timerDisplay');
-        const timerLimitDisplay = document.getElementById('timerLimitDisplay');
-        const timerSubtitle = document.getElementById('timerSubtitle');
-        const countdownText = document.getElementById('countdownText');
-        const remainingDisplay = document.getElementById('remainingDisplay');
         const progressContainer = document.getElementById('progressContainer');
+        const remainingText = document.getElementById('remainingText');
         const progressBar = document.getElementById('progressBar');
-
-        const downloadBanner = document.getElementById('downloadBanner');
-        const savedFileName = document.getElementById('savedFileName');
+        const downloadContainer = document.getElementById('downloadContainer');
         const manualDownloadLink = document.getElementById('manualDownloadLink');
 
-        /**
-         * Variáveis de Estado da Gravação
-         */
         let mediaStream = null;
         let mediaRecorder = null;
         let recordedChunks = [];
-        let recordingMode = 'idle'; // 'idle' | 'free' | '15min'
-        let isPaused = false;
 
-        // Controle preciso de tempo (evita atrasos de setInterval)
-        let accumulatedTimeMs = 0;
-        let lastResumeTimestamp = 0;
         let timerInterval = null;
-        let currentBlobUrl = null;
+        let startTime = 0;
+        let elapsedBeforePause = 0;
+        let isTimedMode = false;
 
-        /**
-         * Formata milissegundos em MM:SS
-         */
-        function formatTime(ms) {
-            const totalSeconds = Math.floor(ms / 1000);
-            const minutes = Math.floor(totalSeconds / 60);
-            const seconds = totalSeconds % 60;
-            return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        // =====================================================================
+        // FUNÇÕES DE CORREÇÃO DE METADADOS (WEBM E MP4)
+        // =====================================================================
+        async function corrigirMetadadosVideo(blobOriginal, duracaoMs) {
+            const tipo = (blobOriginal.type || '').toLowerCase();
+
+            // CENÁRIO 1: WebM (Chrome, Edge, Firefox, Android)
+            if (tipo.includes('webm')) {
+                return new Promise((resolve) => {
+                    if (typeof ysFixWebmDuration === 'function') {
+                        ysFixWebmDuration(blobOriginal, duracaoMs, (blobCorrigido) => {
+                            resolve({ blob: blobCorrigido, extensao: 'webm' });
+                        });
+                    } else {
+                        resolve({ blob: blobOriginal, extensao: 'webm' });
+                    }
+                });
+            }
+
+            // CENÁRIO 2: MP4 nativo (Safari/iOS ou Chrome com mp4)
+            if (tipo.includes('mp4')) {
+                try {
+                    const blobMp4Corrigido = await remuxarMp4(blobOriginal);
+                    return { blob: blobMp4Corrigido, extensao: 'mp4' };
+                } catch (erro) {
+                    console.warn('Falha ao remuxar MP4, usando original:', erro);
+                    return { blob: blobOriginal, extensao: 'mp4' };
+                }
+            }
+
+            return { blob: blobOriginal, extensao: 'webm' };
         }
 
-        /**
-         * Gera nome de arquivo amigável com data e hora local
-         */
-        function generateFileName(extension) {
-            const now = new Date();
-            const pad = (n) => String(n).padStart(2, '0');
-            const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-            const timeStr = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-            return `gravacao-${dateStr}-${timeStr}.${extension}`;
+        function remuxarMp4(blobMp4) {
+            return new Promise(async (resolve, reject) => {
+                if (typeof MP4Box === 'undefined') {
+                    return reject(new Error('MP4Box não carregado.'));
+                }
+
+                const arrayBuffer = await blobMp4.arrayBuffer();
+                arrayBuffer.fileStart = 0;
+
+                const mp4boxInput = MP4Box.createFile();
+                const mp4boxOutput = MP4Box.createFile();
+                const faixasConfiguradas = new Map();
+
+                mp4boxInput.onError = (e) => reject(e);
+
+                mp4boxInput.onReady = (info) => {
+                    info.tracks.forEach((track) => {
+                        const trackOptions = {
+                            timescale: track.timescale,
+                            width: track.track_width,
+                            height: track.track_height,
+                            brands: info.brands,
+                            avcDecoderConfigRecord: null
+                        };
+
+                        const trak = mp4boxInput.getTrackById(track.id);
+                        for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+                            if (entry.avcC) {
+                                const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
+                                entry.avcC.write(stream);
+                                trackOptions.avcDecoderConfigRecord = new Uint8Array(stream.buffer, 8);
+                            } else if (entry.esds) {
+                                trackOptions.esds = entry.esds;
+                            }
+                        }
+
+                        const novoTrackId = mp4boxOutput.addTrack(trackOptions);
+                        faixasConfiguradas.set(track.id, novoTrackId);
+                        mp4boxInput.setExtractionOptions(track.id, null, { nbSamples: 1000 });
+                    });
+
+                    mp4boxInput.start();
+                };
+
+                mp4boxInput.onSamples = (id, user, samples) => {
+                    const novoTrackId = faixasConfiguradas.get(id);
+                    if (!novoTrackId) return;
+
+                    for (const sample of samples) {
+                        mp4boxOutput.addSample(novoTrackId, sample.data, {
+                            duration: sample.duration,
+                            dts: sample.dts,
+                            cts: sample.cts,
+                            is_sync: sample.is_sync
+                        });
+                    }
+                };
+
+                mp4boxInput.appendBuffer(arrayBuffer);
+                mp4boxInput.flush();
+
+                const bufferFinal = mp4boxOutput.getBuffer();
+                if (bufferFinal && bufferFinal.byteLength > 0) {
+                    resolve(new Blob([bufferFinal], { type: 'video/mp4' }));
+                } else {
+                    reject(new Error('Buffer de saída vazio.'));
+                }
+            });
         }
 
-        /**
-         * Detecta o melhor formato MIME suportado pelo navegador
-         */
-        function getSupportedMimeType() {
-            const types = [
-                'video/mp4;codecs=avc1,mp4a.40.2',
-                'video/mp4',
+        // =====================================================================
+        // LÓGICA DA CÂMERA, CRONÔMETRO E GRAVAÇÃO
+        // =====================================================================
+        async function iniciarCamera() {
+            permissionOverlay.classList.add('hidden');
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user' },
+                    audio: true
+                });
+                preview.srcObject = mediaStream;
+                statusBadge.textContent = 'Câmera pronta';
+                statusBadge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
+                btnRecordFree.disabled = false;
+                btnRecord15.disabled = false;
+            } catch (err) {
+                console.error(err);
+                statusBadge.textContent = 'Sem acesso';
+                statusBadge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-rose-900/60 text-rose-300';
+                errorText.textContent = 'Não foi possível acessar câmera/microfone. Verifique as permissões do navegador.';
+                permissionOverlay.classList.remove('hidden');
+            }
+        }
+
+        function formatarTempo(ms) {
+            const totalSegundos = Math.floor(ms / 1000);
+            const horas = String(Math.floor(totalSegundos / 3600)).padStart(2, '0');
+            const minutos = String(Math.floor((totalSegundos % 3600) / 60)).padStart(2, '0');
+            const segundos = String(totalSegundos % 60).padStart(2, '0');
+            return `${horas}:${minutos}:${segundos}`;
+        }
+
+        function formatarMinSeg(ms) {
+            const totalSegundos = Math.max(0, Math.ceil(ms / 1000));
+            const minutos = String(Math.floor(totalSegundos / 60)).padStart(2, '0');
+            const segundos = String(totalSegundos % 60).padStart(2, '0');
+            return `${minutos}:${segundos}`;
+        }
+
+        function atualizarCronometro() {
+            const agora = Date.now();
+            const tempoAtualMs = elapsedBeforePause + (agora - startTime);
+            timerDisplay.textContent = formatarTempo(tempoAtualMs);
+
+            if (isTimedMode) {
+                const restante = LIMITE_15_MIN_MS - tempoAtualMs;
+                const percentual = Math.min(100, (tempoAtualMs / LIMITE_15_MIN_MS) * 100);
+                progressBar.style.width = `${percentual}%`;
+                remainingText.textContent = `Restante: ${formatarMinSeg(restante)}`;
+
+                if (tempoAtualMs >= LIMITE_15_MIN_MS) {
+                    pararGravacao();
+                }
+            }
+        }
+
+        function obterMimeTypeSuportado() {
+            const tipos = [
                 'video/webm;codecs=vp9,opus',
                 'video/webm;codecs=vp8,opus',
-                'video/webm'
+                'video/webm',
+                'video/mp4'
             ];
-            for (const type of types) {
-                if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
-                    return type;
+            for (const tipo of tipos) {
+                if (MediaRecorder.isTypeSupported(tipo)) {
+                    return tipo;
                 }
             }
             return '';
         }
 
-        /**
-         * Solicita acesso à câmera e ao microfone do dispositivo
-         */
-        async function initMediaDevices() {
-            btnRetryPermission.classList.add('hidden');
-            placeholderTitle.textContent = 'Solicitando permissão...';
-            placeholderDesc.textContent = 'Autorize o acesso à câmera e ao microfone no seu navegador.';
-            placeholderIcon.innerHTML = `
-                <svg class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-            `;
-
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                showCameraError(
-                    'Navegador não suportado',
-                    'Seu navegador ou conexão (HTTP não seguro) não permite acesso à câmera e microfone.'
-                );
-                return;
-            }
-
-            try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        facingMode: 'user'
-                    },
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true
-                    }
-                });
-
-                // Conecta o stream à pré-visualização
-                webcamPreview.srcObject = mediaStream;
-                webcamPreview.classList.remove('hidden');
-                cameraPlaceholder.classList.add('hidden');
-                micBadge.classList.remove('hidden');
-
-                updateUIState('ready');
-            } catch (err) {
-                console.error('Erro ao acessar mídia:', err);
-                let title = 'Permissão negada ou indisponível';
-                let desc = 'Não foi possível acessar a câmera ou o microfone. Verifique as permissões do navegador.';
-
-                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                    title = 'Acesso bloqueado';
-                    desc = 'Você negou o acesso à câmera/microfone. Clique no ícone de cadeado na barra de endereço para permitir.';
-                } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-                    title = 'Dispositivo não encontrado';
-                    desc = 'Nenhuma webcam ou microfone conectado foi detectado neste dispositivo.';
-                } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-                    title = 'Câmera em uso';
-                    desc = 'Sua câmera ou microfone já está sendo usado por outro aplicativo.';
-                }
-
-                showCameraError(title, desc);
-            }
-        }
-
-        /**
-         * Exibe mensagem amigável caso haja erro de permissão ou hardware
-         */
-        function showCameraError(title, description) {
-            webcamPreview.classList.add('hidden');
-            cameraPlaceholder.classList.remove('hidden');
-            placeholderTitle.textContent = title;
-            placeholderDesc.textContent = description;
-            placeholderIcon.innerHTML = `
-                <svg class="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-            `;
-            btnRetryPermission.classList.remove('hidden');
-            updateStatusBadge('Sem câmera', 'bg-rose-500/15 text-rose-300 border-rose-500/30', 'bg-rose-500');
-        }
-
-        /**
-         * Atualiza o badge de status no topo
-         */
-        function updateStatusBadge(text, badgeClasses, dotClasses) {
-            statusText.textContent = text;
-            statusBadge.className = `inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${badgeClasses}`;
-            statusDot.className = `w-2 h-2 rounded-full ${dotClasses}`;
-        }
-
-        /**
-         * Gerencia estados dos botões e indicadores visuais
-         */
-        function updateUIState(state) {
-            if (state === 'ready') {
-                btnRecordFree.disabled = false;
-                btnRecord15.disabled = false;
-                btnPauseResume.disabled = true;
-                btnStop.disabled = true;
-
-                iconPause.classList.remove('hidden');
-                iconPlay.classList.add('hidden');
-                textPauseResume.textContent = 'Pausar';
-
-                recOverlay.classList.add('hidden');
-                progressContainer.classList.add('hidden');
-                timerLimitDisplay.classList.add('hidden');
-                countdownText.classList.add('hidden');
-                timerSubtitle.textContent = 'Tempo de Gravação';
-
-                updateStatusBadge('Pronto', 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', 'bg-emerald-400');
-            } 
-            else if (state === 'recording') {
-                btnRecordFree.disabled = true;
-                btnRecord15.disabled = true;
-                btnPauseResume.disabled = false;
-                btnStop.disabled = false;
-
-                iconPause.classList.remove('hidden');
-                iconPlay.classList.add('hidden');
-                textPauseResume.textContent = 'Pausar';
-
-                recOverlay.classList.remove('hidden');
-                recOverlayDot.className = 'w-2 h-2 rounded-full bg-rose-500 animate-pulse-fast';
-                recOverlayLabel.textContent = recordingMode === '15min' ? 'REC • 15 MIN' : 'REC';
-
-                if (recordingMode === '15min') {
-                    timerLimitDisplay.classList.remove('hidden');
-                    countdownText.classList.remove('hidden');
-                    progressContainer.classList.remove('hidden');
-                    timerSubtitle.textContent = 'Gravação Programada (15 min)';
-                    updateStatusBadge('Gravando 15 min', 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', 'bg-indigo-400 animate-pulse-fast');
-                } else {
-                    timerLimitDisplay.classList.add('hidden');
-                    countdownText.classList.add('hidden');
-                    progressContainer.classList.add('hidden');
-                    timerSubtitle.textContent = 'Gravação Livre';
-                    updateStatusBadge('Gravando', 'bg-rose-500/20 text-rose-300 border-rose-500/30', 'bg-rose-500 animate-pulse-fast');
-                }
-            } 
-            else if (state === 'paused') {
-                btnRecordFree.disabled = true;
-                btnRecord15.disabled = true;
-                btnPauseResume.disabled = false;
-                btnStop.disabled = false;
-
-                iconPause.classList.add('hidden');
-                iconPlay.classList.remove('hidden');
-                textPauseResume.textContent = 'Retomar';
-
-                recOverlayDot.className = 'w-2 h-2 rounded-full bg-amber-400';
-                recOverlayLabel.textContent = 'PAUSADO';
-
-                updateStatusBadge('Pausado', 'bg-amber-500/20 text-amber-300 border-amber-500/30', 'bg-amber-400');
-            }
-        }
-
-        /**
-         * Atualiza o cronômetro na tela e verifica limite de 15 minutos
-         */
-        function updateTimerTick() {
-            if (isPaused || recordingMode === 'idle') return;
-
-            const now = Date.now();
-            const currentElapsed = accumulatedTimeMs + (now - lastResumeTimestamp);
-
-            if (recordingMode === '15min') {
-                // Verifica se atingiu exatos 15 minutos (900.000 ms)
-                if (currentElapsed >= FIFTEEN_MINUTES_MS) {
-                    timerDisplay.textContent = '15:00';
-                    remainingDisplay.textContent = '00:00';
-                    progressBar.style.width = '100%';
-                    stopRecording();
-                    return;
-                }
-
-                const remainingMs = Math.max(0, FIFTEEN_MINUTES_MS - currentElapsed);
-                const percentage = Math.min(100, (currentElapsed / FIFTEEN_MINUTES_MS) * 100);
-
-                timerDisplay.textContent = formatTime(currentElapsed);
-                remainingDisplay.textContent = formatTime(remainingMs);
-                progressBar.style.width = `${percentage.toFixed(2)}%`;
-            } else {
-                timerDisplay.textContent = formatTime(currentElapsed);
-            }
-        }
-
-        /**
-         * Inicia a gravação no modo escolhido ('free' ou '15min')
-         */
-        function startRecording(mode) {
+        function iniciarGravacao(modo15Min) {
             if (!mediaStream) return;
 
-            // Limpa gravação anterior
+            isTimedMode = modo15Min;
             recordedChunks = [];
-            downloadBanner.classList.add('hidden');
-            if (currentBlobUrl) {
-                URL.revokeObjectURL(currentBlobUrl);
-                currentBlobUrl = null;
-            }
+            elapsedBeforePause = 0;
+            downloadContainer.classList.add('hidden');
 
-            recordingMode = mode;
-            isPaused = false;
-            accumulatedTimeMs = 0;
-            timerDisplay.textContent = '00:00';
-            remainingDisplay.textContent = '15:00';
-            progressBar.style.width = '0%';
-
-            const mimeType = getSupportedMimeType();
-            try {
-                mediaRecorder = mimeType 
-                    ? new MediaRecorder(mediaStream, { mimeType }) 
-                    : new MediaRecorder(mediaStream);
-            } catch (e) {
-                console.warn('Fallback para MediaRecorder padrão:', e);
-                mediaRecorder = new MediaRecorder(mediaStream);
-            }
+            const mimeType = obterMimeTypeSuportado();
+            mediaRecorder = mimeType
+                ? new MediaRecorder(mediaStream, { mimeType })
+                : new MediaRecorder(mediaStream);
 
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data && event.data.size > 0) {
@@ -508,215 +316,116 @@
                 }
             };
 
-            mediaRecorder.onstop = () => {
-                saveRecordingToDevice();
+            // AQUI ACONTECE A CORREÇÃO AUTOMÁTICA ANTES DE SALVAR
+            mediaRecorder.onstop = async () => {
+                statusBadge.textContent = 'Processando vídeo...';
+                const duracaoFinalMs = elapsedBeforePause;
+                const blobBruto = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+
+                const { blob: blobCorrigido, extensao } = await corrigirMetadadosVideo(blobBruto, duracaoFinalMs);
+
+                const url = URL.createObjectURL(blobCorrigido);
+                const dataHora = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                const nomeArquivo = `gravacao-${dataHora}.${extensao}`;
+
+                // Download automático
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = nomeArquivo;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                // Atualiza link de backup
+                manualDownloadLink.href = url;
+                manualDownloadLink.download = nomeArquivo;
+                downloadContainer.classList.remove('hidden');
+
+                statusBadge.textContent = 'Salvo com sucesso';
+                statusBadge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
             };
 
-            // Inicia gravação coletando chunks a cada 1 segundo
             mediaRecorder.start(1000);
-            lastResumeTimestamp = Date.now();
+            startTime = Date.now();
+            timerDisplay.textContent = '00:00:00';
+            timerInterval = setInterval(atualizarCronometro, 200);
 
-            updateUIState('recording');
+            if (isTimedMode) {
+                progressContainer.classList.remove('hidden');
+                progressBar.style.width = '0%';
+                remainingText.textContent = 'Restante: 15:00';
+            } else {
+                progressContainer.classList.add('hidden');
+            }
 
-            clearInterval(timerInterval);
-            timerInterval = setInterval(updateTimerTick, 100);
+            // Atualiza interface
+            recIndicator.classList.remove('hidden');
+            recDot.classList.add('animate-pulse');
+            recLabel.textContent = 'REC';
+            statusBadge.textContent = isTimedMode ? 'Gravando (15 min)' : 'Gravando livre';
+            statusBadge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-rose-900/70 text-rose-200 border border-rose-700/50';
+
+            btnRecordFree.disabled = true;
+            btnRecord15.disabled = true;
+            btnPause.disabled = false;
+            btnPause.textContent = 'Pausar';
+            btnStop.disabled = false;
         }
 
-        /**
-         * Pausa ou retoma a gravação atual
-         */
-        function togglePauseResume() {
-            if (!mediaRecorder || recordingMode === 'idle') return;
+        function alternarPausa() {
+            if (!mediaRecorder) return;
 
-            if (!isPaused) {
-                // Pausar
-                if (mediaRecorder.state === 'recording') {
-                    mediaRecorder.pause();
-                }
-                isPaused = true;
-                accumulatedTimeMs += (Date.now() - lastResumeTimestamp);
+            if (mediaRecorder.state === 'recording') {
+                mediaRecorder.pause();
                 clearInterval(timerInterval);
-                updateUIState('paused');
-            } else {
-                // Retomar
-                if (mediaRecorder.state === 'paused') {
-                    mediaRecorder.resume();
-                }
-                isPaused = false;
-                lastResumeTimestamp = Date.now();
-                updateUIState('recording');
-                timerInterval = setInterval(updateTimerTick, 100);
+                elapsedBeforePause += Date.now() - startTime;
+
+                btnPause.textContent = 'Retomar';
+                recDot.classList.remove('animate-pulse');
+                recLabel.textContent = 'PAUSADO';
+                statusBadge.textContent = 'Pausado';
+                statusBadge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-amber-900/70 text-amber-200';
+            } else if (mediaRecorder.state === 'paused') {
+                mediaRecorder.resume();
+                startTime = Date.now();
+                timerInterval = setInterval(atualizarCronometro, 200);
+
+                btnPause.textContent = 'Pausar';
+                recDot.classList.add('animate-pulse');
+                recLabel.textContent = 'REC';
+                statusBadge.textContent = isTimedMode ? 'Gravando (15 min)' : 'Gravando livre';
+                statusBadge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-rose-900/70 text-rose-200';
             }
         }
 
-        /**
-         * Para a gravação imediatamente
-         */
-        function stopRecording() {
+        function pararGravacao() {
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+
+            if (mediaRecorder.state === 'recording') {
+                elapsedBeforePause += Date.now() - startTime;
+            }
             clearInterval(timerInterval);
-            recordingMode = 'idle';
-            isPaused = false;
+            timerDisplay.textContent = formatarTempo(elapsedBeforePause);
 
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-            }
+            mediaRecorder.stop();
 
-            updateUIState('ready');
+            // Restaura botões
+            recIndicator.classList.add('hidden');
+            progressContainer.classList.add('hidden');
+            btnRecordFree.disabled = false;
+            btnRecord15.disabled = false;
+            btnPause.disabled = true;
+            btnPause.textContent = 'Pausar';
+            btnStop.disabled = true;
         }
 
-        /**
-         * Gera o arquivo de vídeo e dispara o download automático
-         */
-        function saveRecordingToDevice() {
-            if (recordedChunks.length === 0) return;
+        btnRetry.addEventListener('click', iniciarCamera);
+        btnRecordFree.addEventListener('click', () => iniciarGravacao(false));
+        btnRecord15.addEventListener('click', () => iniciarGravacao(true));
+        btnPause.addEventListener('click', alternarPausa);
+        btnStop.addEventListener('click', pararGravacao);
 
-            const finalMimeType = (mediaRecorder && mediaRecorder.mimeType) || 'video/webm';
-            const isMp4 = finalMimeType.toLowerCase().includes('mp4');
-            const extension = isMp4 ? 'mp4' : 'webm';
-            const fileName = generateFileName(extension);
-
-            const blob = new Blob(recordedChunks, { type: finalMimeType });
-            currentBlobUrl = URL.createObjectURL(blob);
-
-            // Configura o banner de download manual
-            savedFileName.textContent = fileName;
-            manualDownloadLink.href = currentBlobUrl;
-            manualDownloadLink.download = fileName;
-            downloadBanner.classList.remove('hidden');
-
-            // Dispara download automático no dispositivo
-            const tempLink = document.createElement('a');
-            tempLink.style.display = 'none';
-            tempLink.href = currentBlobUrl;
-            tempLink.download = fileName;
-            document.body.appendChild(tempLink);
-            tempLink.click();
-            document.body.removeChild(tempLink);
-        }
-
-        /**
-         * Event Listeners dos Botões
-         */
-        btnRetryPermission.addEventListener('click', initMediaDevices);
-        btnRecordFree.addEventListener('click', () => startRecording('free'));
-        btnRecord15.addEventListener('click', () => startRecording('15min'));
-        btnPauseResume.addEventListener('click', togglePauseResume);
-        btnStop.addEventListener('click', stopRecording);
-
-        // Inicializa câmera e microfone ao carregar a página
-        window.addEventListener('DOMContentLoaded', initMediaDevices);
-
-        /**
- * Corrige os metadados de duração e índice de busca (seek) para WebM e MP4.
- * @param {Blob} blobOriginal - O Blob gerado pelo MediaRecorder.
- * @param {number} duracaoMs - A duração exata da gravação em milissegundos (do seu cronômetro).
- * @returns {Promise<{blob: Blob, extensao: string}>}
- */
-async function corrigirMetadadosVideo(blobOriginal, duracaoMs) {
-    const tipo = (blobOriginal.type || '').toLowerCase();
-
-    // CENÁRIO 1: Vídeo gravado em WebM (Chrome, Edge, Firefox, Android)
-    if (tipo.includes('webm')) {
-        return new Promise((resolve) => {
-            if (typeof ysFixWebmDuration === 'function') {
-                ysFixWebmDuration(blobOriginal, duracaoMs, (blobCorrigido) => {
-                    resolve({ blob: blobCorrigido, extensao: 'webm' });
-                });
-            } else {
-                resolve({ blob: blobOriginal, extensao: 'webm' });
-            }
-        });
-    }
-
-    // CENÁRIO 2: Vídeo gravado em MP4 nativo (Safari/iOS ou Chrome com mp4)
-    if (tipo.includes('mp4')) {
-        try {
-            const blobMp4Corrigido = await remuxarMp4(blobOriginal);
-            return { blob: blobMp4Corrigido, extensao: 'mp4' };
-        } catch (erro) {
-            console.warn('Falha ao remuxar MP4, usando arquivo original:', erro);
-            return { blob: blobOriginal, extensao: 'mp4' };
-        }
-    }
-
-    // Fallback para outros formatos raros
-    return { blob: blobOriginal, extensao: 'webm' };
-}
-
-/**
- * Reconstrói a estrutura de átomos (ftyp/moov/mdat) de um MP4 em memória usando MP4Box.js
- */
-function remuxarMp4(blobMp4) {
-    return new Promise(async (resolve, reject) => {
-        if (typeof MP4Box === 'undefined') {
-            return reject(new Error('MP4Box não carregado.'));
-        }
-
-        const arrayBuffer = await blobMp4.arrayBuffer();
-        arrayBuffer.fileStart = 0;
-
-        const mp4boxInput = MP4Box.createFile();
-        const mp4boxOutput = MP4Box.createFile();
-        const faixasConfiguradas = new Map();
-
-        mp4boxInput.onError = (e) => reject(e);
-
-        mp4boxInput.onReady = (info) => {
-            info.tracks.forEach((track) => {
-                const trackOptions = {
-                    timescale: track.timescale,
-                    width: track.track_width,
-                    height: track.track_height,
-                    brands: info.brands,
-                    avcDecoderConfigRecord: null
-                };
-
-                // Extrai configurações específicas de codec (AVC/H.264 ou AAC) se existirem
-                const trak = mp4boxInput.getTrackById(track.id);
-                for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-                    if (entry.avcC) {
-                        const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
-                        entry.avcC.write(stream);
-                        trackOptions.avcDecoderConfigRecord = new Uint8Array(stream.buffer, 8);
-                    } else if (entry.esds) {
-                        trackOptions.esds = entry.esds;
-                    }
-                }
-
-                const novoTrackId = mp4boxOutput.addTrack(trackOptions);
-                faixasConfiguradas.set(track.id, novoTrackId);
-                mp4boxInput.setExtractionOptions(track.id, null, { nbSamples: 1000 });
-            });
-
-            mp4boxInput.start();
-        };
-
-        mp4boxInput.onSamples = (id, user, samples) => {
-            const novoTrackId = faixasConfiguradas.get(id);
-            if (!novoTrackId) return;
-
-            for (const sample of samples) {
-                mp4boxOutput.addSample(novoTrackId, sample.data, {
-                    duration: sample.duration,
-                    dts: sample.dts,
-                    cts: sample.cts,
-                    is_sync: sample.is_sync
-                });
-            }
-        };
-
-        mp4boxInput.appendBuffer(arrayBuffer);
-        mp4boxInput.flush();
-
-        // Gera o novo buffer MP4 organizado com índice completo no início
-        const bufferFinal = mp4boxOutput.getBuffer();
-        if (bufferFinal && bufferFinal.byteLength > 0) {
-            resolve(new Blob([bufferFinal], { type: 'video/mp4' }));
-        } else {
-            reject(new Error('Buffer de saída vazio.'));
-        }
-    });
-}
+        window.addEventListener('DOMContentLoaded', iniciarCamera);
     </script>
 </body>
 </html>
