@@ -27,6 +27,12 @@
             }
         }
     </script>
+
+    <!-- Corrige duração e busca em arquivos WebM -->
+<script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.min.js"></script>
+<!-- Remuxa átomos moov/mdat em arquivos MP4 nativos -->
+<script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+    
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-center items-center p-4 sm:p-6 selection:bg-rose-500/30">
 
@@ -599,6 +605,118 @@
 
         // Inicializa câmera e microfone ao carregar a página
         window.addEventListener('DOMContentLoaded', initMediaDevices);
+
+        /**
+ * Corrige os metadados de duração e índice de busca (seek) para WebM e MP4.
+ * @param {Blob} blobOriginal - O Blob gerado pelo MediaRecorder.
+ * @param {number} duracaoMs - A duração exata da gravação em milissegundos (do seu cronômetro).
+ * @returns {Promise<{blob: Blob, extensao: string}>}
+ */
+async function corrigirMetadadosVideo(blobOriginal, duracaoMs) {
+    const tipo = (blobOriginal.type || '').toLowerCase();
+
+    // CENÁRIO 1: Vídeo gravado em WebM (Chrome, Edge, Firefox, Android)
+    if (tipo.includes('webm')) {
+        return new Promise((resolve) => {
+            if (typeof ysFixWebmDuration === 'function') {
+                ysFixWebmDuration(blobOriginal, duracaoMs, (blobCorrigido) => {
+                    resolve({ blob: blobCorrigido, extensao: 'webm' });
+                });
+            } else {
+                resolve({ blob: blobOriginal, extensao: 'webm' });
+            }
+        });
+    }
+
+    // CENÁRIO 2: Vídeo gravado em MP4 nativo (Safari/iOS ou Chrome com mp4)
+    if (tipo.includes('mp4')) {
+        try {
+            const blobMp4Corrigido = await remuxarMp4(blobOriginal);
+            return { blob: blobMp4Corrigido, extensao: 'mp4' };
+        } catch (erro) {
+            console.warn('Falha ao remuxar MP4, usando arquivo original:', erro);
+            return { blob: blobOriginal, extensao: 'mp4' };
+        }
+    }
+
+    // Fallback para outros formatos raros
+    return { blob: blobOriginal, extensao: 'webm' };
+}
+
+/**
+ * Reconstrói a estrutura de átomos (ftyp/moov/mdat) de um MP4 em memória usando MP4Box.js
+ */
+function remuxarMp4(blobMp4) {
+    return new Promise(async (resolve, reject) => {
+        if (typeof MP4Box === 'undefined') {
+            return reject(new Error('MP4Box não carregado.'));
+        }
+
+        const arrayBuffer = await blobMp4.arrayBuffer();
+        arrayBuffer.fileStart = 0;
+
+        const mp4boxInput = MP4Box.createFile();
+        const mp4boxOutput = MP4Box.createFile();
+        const faixasConfiguradas = new Map();
+
+        mp4boxInput.onError = (e) => reject(e);
+
+        mp4boxInput.onReady = (info) => {
+            info.tracks.forEach((track) => {
+                const trackOptions = {
+                    timescale: track.timescale,
+                    width: track.track_width,
+                    height: track.track_height,
+                    brands: info.brands,
+                    avcDecoderConfigRecord: null
+                };
+
+                // Extrai configurações específicas de codec (AVC/H.264 ou AAC) se existirem
+                const trak = mp4boxInput.getTrackById(track.id);
+                for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+                    if (entry.avcC) {
+                        const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
+                        entry.avcC.write(stream);
+                        trackOptions.avcDecoderConfigRecord = new Uint8Array(stream.buffer, 8);
+                    } else if (entry.esds) {
+                        trackOptions.esds = entry.esds;
+                    }
+                }
+
+                const novoTrackId = mp4boxOutput.addTrack(trackOptions);
+                faixasConfiguradas.set(track.id, novoTrackId);
+                mp4boxInput.setExtractionOptions(track.id, null, { nbSamples: 1000 });
+            });
+
+            mp4boxInput.start();
+        };
+
+        mp4boxInput.onSamples = (id, user, samples) => {
+            const novoTrackId = faixasConfiguradas.get(id);
+            if (!novoTrackId) return;
+
+            for (const sample of samples) {
+                mp4boxOutput.addSample(novoTrackId, sample.data, {
+                    duration: sample.duration,
+                    dts: sample.dts,
+                    cts: sample.cts,
+                    is_sync: sample.is_sync
+                });
+            }
+        };
+
+        mp4boxInput.appendBuffer(arrayBuffer);
+        mp4boxInput.flush();
+
+        // Gera o novo buffer MP4 organizado com índice completo no início
+        const bufferFinal = mp4boxOutput.getBuffer();
+        if (bufferFinal && bufferFinal.byteLength > 0) {
+            resolve(new Blob([bufferFinal], { type: 'video/mp4' }));
+        } else {
+            reject(new Error('Buffer de saída vazio.'));
+        }
+    });
+}
     </script>
 </body>
 </html>
