@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gravador de Vídeo</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- 1. BIBLIOTECAS DE CORREÇÃO DE METADADOS (Ficam aqui dentro do <head>) -->
-    <script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+    <!-- Biblioteca oficial WebRTC para reconstruir tabela de busca (Seek/Cues) em WebM -->
+    <script src="https://www.webrtc-experiment.com/EBML.js"></script>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-center p-4">
 
@@ -81,7 +79,7 @@
             </div>
         </div>
 
-        <!-- Link manual de backup caso o download automático seja bloqueado -->
+        <!-- Link manual de backup -->
         <div id="downloadContainer" class="hidden w-full text-center">
             <a id="manualDownloadLink" href="#" class="inline-block w-full py-2.5 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-medium text-emerald-400 transition">
                 ⬇ Baixar gravação novamente
@@ -89,9 +87,8 @@
         </div>
     </main>
 
-    <!-- 2. TODO O JAVASCRIPT FICA AQUI NO FINAL, ANTES DE FECHAR O </body> -->
     <script>
-        const LIMITE_15_MIN_MS = 15 * 60 * 1000; // 900.000 ms
+        const LIMITE_15_MIN_MS = 15 * 60 * 1000;
 
         const preview = document.getElementById('preview');
         const statusBadge = document.getElementById('statusBadge');
@@ -124,110 +121,57 @@
         let isTimedMode = false;
 
         // =====================================================================
-        // FUNÇÕES DE CORREÇÃO DE METADADOS (WEBM E MP4)
+        // RECONSTRUÇÃO SEGURA DE SEEK/DURAÇÃO COM EBML.JS (SEM CORROMPER FRAMES)
         // =====================================================================
-        async function corrigirMetadadosVideo(blobOriginal, duracaoMs) {
-            const tipo = (blobOriginal.type || '').toLowerCase();
+        function getSeekableBlob(inputBlob) {
+            return new Promise((resolve) => {
+                const tipo = (inputBlob.type || '').toLowerCase();
 
-            // CENÁRIO 1: WebM (Chrome, Edge, Firefox, Android)
-            if (tipo.includes('webm')) {
-                return new Promise((resolve) => {
-                    if (typeof ysFixWebmDuration === 'function') {
-                        ysFixWebmDuration(blobOriginal, duracaoMs, (blobCorrigido) => {
-                            resolve({ blob: blobCorrigido, extensao: 'webm' });
-                        });
-                    } else {
-                        resolve({ blob: blobOriginal, extensao: 'webm' });
-                    }
-                });
-            }
-
-            // CENÁRIO 2: MP4 nativo (Safari/iOS ou Chrome com mp4)
-            if (tipo.includes('mp4')) {
-                try {
-                    const blobMp4Corrigido = await remuxarMp4(blobOriginal);
-                    return { blob: blobMp4Corrigido, extensao: 'mp4' };
-                } catch (erro) {
-                    console.warn('Falha ao remuxar MP4, usando original:', erro);
-                    return { blob: blobOriginal, extensao: 'mp4' };
-                }
-            }
-
-            return { blob: blobOriginal, extensao: 'webm' };
-        }
-
-        function remuxarMp4(blobMp4) {
-            return new Promise(async (resolve, reject) => {
-                if (typeof MP4Box === 'undefined') {
-                    return reject(new Error('MP4Box não carregado.'));
+                // Se for MP4 nativo (Safari/iOS), o próprio navegador já gera o cabeçalho válido
+                if (tipo.includes('mp4')) {
+                    return resolve({ blob: inputBlob, extensao: 'mp4' });
                 }
 
-                const arrayBuffer = await blobMp4.arrayBuffer();
-                arrayBuffer.fileStart = 0;
+                // Se EBML não carregou (ex: sem internet), devolve o original intacto
+                if (typeof EBML === 'undefined') {
+                    return resolve({ blob: inputBlob, extensao: 'webm' });
+                }
 
-                const mp4boxInput = MP4Box.createFile();
-                const mp4boxOutput = MP4Box.createFile();
-                const faixasConfiguradas = new Map();
+                const reader = new EBML.Reader();
+                const decoder = new EBML.Decoder();
+                const tools = EBML.tools;
 
-                mp4boxInput.onError = (e) => reject(e);
+                const fileReader = new FileReader();
+                fileReader.onload = function () {
+                    try {
+                        const ebmlElms = decoder.decode(this.result);
+                        ebmlElms.forEach((elm) => reader.read(elm));
+                        reader.stop();
 
-                mp4boxInput.onReady = (info) => {
-                    info.tracks.forEach((track) => {
-                        const trackOptions = {
-                            timescale: track.timescale,
-                            width: track.track_width,
-                            height: track.track_height,
-                            brands: info.brands,
-                            avcDecoderConfigRecord: null
-                        };
+                        const refinedMetadataBuf = tools.makeMetadataSeekable(
+                            reader.metadatas,
+                            reader.duration,
+                            reader.cues
+                        );
 
-                        const trak = mp4boxInput.getTrackById(track.id);
-                        for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-                            if (entry.avcC) {
-                                const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN);
-                                entry.avcC.write(stream);
-                                trackOptions.avcDecoderConfigRecord = new Uint8Array(stream.buffer, 8);
-                            } else if (entry.esds) {
-                                trackOptions.esds = entry.esds;
-                            }
-                        }
-
-                        const novoTrackId = mp4boxOutput.addTrack(trackOptions);
-                        faixasConfiguradas.set(track.id, novoTrackId);
-                        mp4boxInput.setExtractionOptions(track.id, null, { nbSamples: 1000 });
-                    });
-
-                    mp4boxInput.start();
-                };
-
-                mp4boxInput.onSamples = (id, user, samples) => {
-                    const novoTrackId = faixasConfiguradas.get(id);
-                    if (!novoTrackId) return;
-
-                    for (const sample of samples) {
-                        mp4boxOutput.addSample(novoTrackId, sample.data, {
-                            duration: sample.duration,
-                            dts: sample.dts,
-                            cts: sample.cts,
-                            is_sync: sample.is_sync
+                        const body = this.result.slice(reader.metadataSize);
+                        const finalBlob = new Blob([refinedMetadataBuf, body], {
+                            type: 'video/webm'
                         });
+
+                        resolve({ blob: finalBlob, extensao: 'webm' });
+                    } catch (e) {
+                        console.warn('Erro ao indexar WebM, mantendo arquivo original:', e);
+                        resolve({ blob: inputBlob, extensao: 'webm' });
                     }
                 };
-
-                mp4boxInput.appendBuffer(arrayBuffer);
-                mp4boxInput.flush();
-
-                const bufferFinal = mp4boxOutput.getBuffer();
-                if (bufferFinal && bufferFinal.byteLength > 0) {
-                    resolve(new Blob([bufferFinal], { type: 'video/mp4' }));
-                } else {
-                    reject(new Error('Buffer de saída vazio.'));
-                }
+                fileReader.onerror = () => resolve({ blob: inputBlob, extensao: 'webm' });
+                fileReader.readAsArrayBuffer(inputBlob);
             });
         }
 
         // =====================================================================
-        // LÓGICA DA CÂMERA, CRONÔMETRO E GRAVAÇÃO
+        // CÂMERA, CRONÔMETRO E GRAVAÇÃO
         // =====================================================================
         async function iniciarCamera() {
             permissionOverlay.classList.add('hidden');
@@ -284,8 +228,8 @@
 
         function obterMimeTypeSuportado() {
             const tipos = [
-                'video/webm;codecs=vp9,opus',
                 'video/webm;codecs=vp8,opus',
+                'video/webm;codecs=vp9,opus',
                 'video/webm',
                 'video/mp4'
             ];
@@ -316,19 +260,17 @@
                 }
             };
 
-            // AQUI ACONTECE A CORREÇÃO AUTOMÁTICA ANTES DE SALVAR
             mediaRecorder.onstop = async () => {
-                statusBadge.textContent = 'Processando vídeo...';
-                const duracaoFinalMs = elapsedBeforePause;
+                statusBadge.textContent = 'Indexando vídeo...';
                 const blobBruto = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
 
-                const { blob: blobCorrigido, extensao } = await corrigirMetadadosVideo(blobBruto, duracaoFinalMs);
+                // Reconstroi metadados e Cues sem cortar o vídeo
+                const { blob: blobPronto, extensao } = await getSeekableBlob(blobBruto);
 
-                const url = URL.createObjectURL(blobCorrigido);
+                const url = URL.createObjectURL(blobPronto);
                 const dataHora = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
                 const nomeArquivo = `gravacao-${dataHora}.${extensao}`;
 
-                // Download automático
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = nomeArquivo;
@@ -336,7 +278,6 @@
                 link.click();
                 document.body.removeChild(link);
 
-                // Atualiza link de backup
                 manualDownloadLink.href = url;
                 manualDownloadLink.download = nomeArquivo;
                 downloadContainer.classList.remove('hidden');
@@ -345,7 +286,8 @@
                 statusBadge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
             };
 
-            mediaRecorder.start(1000);
+            // Importante: start() sem timeslice evita fragmentar os clusters do vídeo
+            mediaRecorder.start();
             startTime = Date.now();
             timerDisplay.textContent = '00:00:00';
             timerInterval = setInterval(atualizarCronometro, 200);
@@ -358,7 +300,6 @@
                 progressContainer.classList.add('hidden');
             }
 
-            // Atualiza interface
             recIndicator.classList.remove('hidden');
             recDot.classList.add('animate-pulse');
             recLabel.textContent = 'REC';
@@ -409,7 +350,6 @@
 
             mediaRecorder.stop();
 
-            // Restaura botões
             recIndicator.classList.add('hidden');
             progressContainer.classList.add('hidden');
             btnRecordFree.disabled = false;
